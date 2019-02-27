@@ -1,35 +1,30 @@
-FROM ubuntu:14.04
+FROM ubuntu:16.04
 
 # Install build dependencies (and vim + picocom for editing/debugging)
 RUN apt-get -qq update \
-    && apt-get install -y make unrar-free autoconf automake libtool gcc g++ gperf flex bison texinfo gawk ncurses-dev libexpat-dev python-dev python python-serial sed git unzip bash help2man wget bzip2 vim picocom \
+    && apt-get install -y make unrar-free autoconf automake libtool libtool-bin \
+       gcc g++ gperf flex bison texinfo gawk ncurses-dev libexpat-dev python-dev \
+       python python-serial sed git unzip bash help2man wget bzip2 vim picocom \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Add a user because we can't build the toolchain with root
-RUN useradd -d /home/esp -m esp && \
-    usermod -a -G dialout,staff esp && \
-    mkdir -p /etc/sudoers.d && \
-    echo "esp ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/esp && \
-    chmod 0440 /etc/sudoers.d/esp
-
-USER esp
-
 # Get the esp-open-sdk
-RUN git clone --recursive https://github.com/pfalcon/esp-open-sdk.git /home/esp/esp-open-sdk
+RUN git clone --recursive https://github.com/pfalcon/esp-open-sdk.git /esp-open-sdk \
+    && echo "CT_EXPERIMENTAL=y" >> /esp-open-sdk/crosstool-config-overrides \
+    && echo "CT_ALLOW_BUILD_AS_ROOT=y" >> /esp-open-sdk/crosstool-config-overrides \
+    && echo "CT_ALLOW_BUILD_AS_ROOT_SURE=y" >> /esp-open-sdk/crosstool-config-overrides
 
 # Build the esp-open-sdk
-RUN cd /home/esp/esp-open-sdk && make toolchain esptool libhal STANDALONE=n
+# Clean out large and now unnecessary crosstool-NG build area
+RUN cd /esp-open-sdk && make toolchain esptool libhal STANDALONE=n && \
+ rm -fr /esp-open-sdk/crosstool-NG
 
 # Add the esp-open-sdk bin folder to PATH
-ENV PATH /home/esp/esp-open-sdk/xtensa-lx106-elf/bin:$PATH
+ENV PATH /esp-open-sdk/xtensa-lx106-elf/bin:$PATH
+
+# Add ESP_OPEN_RTOS variable to point to path so that makefiles don't *have* to live in the
+# examples directory (will require your makefile to reference $(ESP_OPEN_RTOS)/common.mk
+ENV ESP_OPEN_RTOS=/esp-open-rtos
 
 # Get the esp-open-rtos SDK
-RUN git clone --recursive https://github.com/Superhouse/esp-open-rtos.git /home/esp/esp-open-rtos
-
-# Create the directory we'll put our work in
-RUN mkdir /home/esp/esp-open-rtos/examples/project
-
-# Define working directory. We place the working directory inside the esp-open-rtos/examples directory
-# to be compatible with the existing Makefiles
-WORKDIR /home/esp/esp-open-rtos/examples/project
+RUN git clone --recursive https://github.com/SuperHouse/esp-open-rtos.git $ESP_OPEN_RTOS
